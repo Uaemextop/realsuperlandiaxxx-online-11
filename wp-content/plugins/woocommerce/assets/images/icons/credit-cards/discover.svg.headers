@@ -1,0 +1,26 @@
+{
+  "url": "https://realsuperlandiaxxx.online/wp-content/plugins/woocommerce/assets/images/icons/credit-cards/discover.svg",
+  "status_code": 200,
+  "headers": {
+    "Date": "Mon, 02 Mar 2026 08:08:15 GMT",
+    "Content-Type": "image/svg+xml",
+    "Transfer-Encoding": "chunked",
+    "Connection": "keep-alive",
+    "Cache-Control": "public, max-age=604800",
+    "expires": "Fri, 06 Mar 2026 08:32:53 GMT",
+    "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+    "last-modified": "Tue, 17 Feb 2026 21:40:18 GMT",
+    "Server-Timing": "cfCacheStatus;desc=\"HIT\", cfEdge;dur=7,cfOrigin;dur=0",
+    "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=7%2BB1OafZ08d7agZg%2F0CMEwXkIJw30zJWXohEcRqH7zCvhQMPnaesbrjYwYc5lW5WOG8My9%2FErFwV6nUSGMucrJmY1UWA%2FYjhNkleo6%2F2nySsL1xmueWlMM0%3D\"}]}",
+    "vary": "Accept-Encoding",
+    "Server": "cloudflare",
+    "x-powered-by": "CyberPanel-OLS/2.4.4",
+    "x-turbo-charged-by": "LiteSpeed",
+    "Age": "257721",
+    "cf-cache-status": "HIT",
+    "etag": "W/\"889-6994e042-e37f3;br\"",
+    "Content-Encoding": "gzip",
+    "CF-RAY": "9d5ee997ae2beb12-DFW",
+    "alt-svc": "h3=\":443\"; ma=86400"
+  }
+}
