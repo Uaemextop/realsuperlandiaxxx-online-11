@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq python3 python3-pip ffmpeg
-          pip install realesrgan ffmpeg-python
+          pip install --break-system-packages realesrgan ffmpeg-python
           # Fix basicsr compatibility with newer torchvision
           BASICSR_DEG=$(find "$(pip show basicsr | grep Location | cut -d' ' -f2)" -name "degradations.py" -path "*/basicsr/*" | head -1)
           if [ -f "$BASICSR_DEG" ]; then
