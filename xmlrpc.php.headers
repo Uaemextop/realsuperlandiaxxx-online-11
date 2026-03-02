@@ -1,0 +1,23 @@
+{
+  "url": "https://realsuperlandiaxxx.online/xmlrpc.php?rsd",
+  "status_code": 200,
+  "headers": {
+    "Date": "Mon, 02 Mar 2026 08:04:32 GMT",
+    "Content-Type": "text/xml; charset=UTF-8",
+    "Content-Length": "312",
+    "Connection": "keep-alive",
+    "wpo-cache-status": "not cached",
+    "wpo-cache-message": "In the settings, caching is disabled for matches for one of the current request's GET parameters, The request extension is not suitable for caching",
+    "Content-Encoding": "gzip",
+    "vary": "Accept-Encoding",
+    "Server": "cloudflare",
+    "x-powered-by": "CyberPanel-OLS/2.4.4",
+    "x-turbo-charged-by": "LiteSpeed",
+    "cf-cache-status": "DYNAMIC",
+    "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+    "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\", cfEdge;dur=3,cfOrigin;dur=622",
+    "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=yY8b1%2FBf4kbb%2FQ8MtU35A2%2FJMBMJqrts8VM4gXWfwI%2FtGdd5r%2B6pQF%2BxwnyLoXfR3oXHJxp9UeAIzV%2BX5k8nQGJ1kFVpyMMbQKIEDRLGRcLz2z4nIhtr6nI%3D\"}]}",
+    "CF-RAY": "9d5ee425990f2251-DFW",
+    "alt-svc": "h3=\":443\"; ma=86400"
+  }
+}

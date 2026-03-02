@@ -1,0 +1,24 @@
+{
+  "url": "https://realsuperlandiaxxx.online/feed/",
+  "status_code": 200,
+  "headers": {
+    "Date": "Mon, 02 Mar 2026 08:04:32 GMT",
+    "Content-Type": "application/rss+xml",
+    "Content-Length": "904",
+    "Connection": "keep-alive",
+    "Cache-Control": "no-cache",
+    "Content-Encoding": "gzip",
+    "wpo-cache-status": "cached",
+    "last-modified": "Mon, 02 Mar 2026 04:28:47 GMT",
+    "Server": "cloudflare",
+    "x-powered-by": "CyberPanel-OLS/2.4.4",
+    "x-turbo-charged-by": "LiteSpeed",
+    "cf-cache-status": "DYNAMIC",
+    "vary": "accept-encoding",
+    "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+    "Server-Timing": "cfCacheStatus;desc=\"DYNAMIC\", cfEdge;dur=2,cfOrigin;dur=414",
+    "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=79qbXHv8L3HW3SaqdF8dgbTBBaR4MPP3q%2FwbQJ6hmKwptAuRTKg3cjczSC9vB8k3a1d9Mg%2Bq44Z8oA1GPVfnshV5nYuhPXPqjFTq8B4gBDAuWl4Ik4miVGY%3D\"}]}",
+    "CF-RAY": "9d5ee4275decddab-DFW",
+    "alt-svc": "h3=\":443\"; ma=86400"
+  }
+}

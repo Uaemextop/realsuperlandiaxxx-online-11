@@ -1,0 +1,26 @@
+{
+  "url": "https://realsuperlandiaxxx.online/wp-content/themes/retrotube/assets/stylesheets/fancybox/jquery.fancybox.min.css",
+  "status_code": 200,
+  "headers": {
+    "Date": "Mon, 02 Mar 2026 08:04:36 GMT",
+    "Content-Type": "text/css",
+    "Transfer-Encoding": "chunked",
+    "Connection": "keep-alive",
+    "Cache-Control": "public, max-age=604800",
+    "expires": "Thu, 26 Feb 2026 15:04:48 GMT",
+    "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+    "last-modified": "Fri, 06 Feb 2026 14:47:38 GMT",
+    "Server-Timing": "cfCacheStatus;desc=\"HIT\", cfEdge;dur=4,cfOrigin;dur=0",
+    "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=of7FPnIALyezyDtLP4fmpV8z68V2uMG0HaZoXZ1U8j%2F9fCpngA4zibbhyJq%2BtnmRQxsV5D8Nmyc3Z0ctBYL7c9HuRxwjrJ%2Bu6F%2FGZW3%2FeTy1eb8nw9kh7gM%3D\"}]}",
+    "vary": "Accept-Encoding",
+    "Server": "cloudflare",
+    "x-powered-by": "CyberPanel-OLS/2.4.4",
+    "x-turbo-charged-by": "LiteSpeed",
+    "Age": "259146",
+    "cf-cache-status": "HIT",
+    "etag": "W/\"3664-6985ff0a-e22a7;br\"",
+    "Content-Encoding": "gzip",
+    "CF-RAY": "9d5ee4406d12f0ae-DFW",
+    "alt-svc": "h3=\":443\"; ma=86400"
+  }
+}
