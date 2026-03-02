@@ -1,0 +1,26 @@
+{
+  "url": "https://realsuperlandiaxxx.online/wp-content/plugins/woocommerce/assets/css/woocommerce.css?ver=10.5.2",
+  "status_code": 200,
+  "headers": {
+    "Date": "Mon, 02 Mar 2026 08:08:12 GMT",
+    "Content-Type": "text/css",
+    "Transfer-Encoding": "chunked",
+    "Connection": "keep-alive",
+    "Cache-Control": "public, max-age=604800",
+    "expires": "Sun, 08 Mar 2026 06:03:48 GMT",
+    "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+    "last-modified": "Tue, 17 Feb 2026 21:40:18 GMT",
+    "Server-Timing": "cfCacheStatus;desc=\"HIT\", cfEdge;dur=5,cfOrigin;dur=0",
+    "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=LKzZI9T2b7waHJ4ak13aRc4QgPW0cPSpJeWG6K1j65j3ktVAKWzcjIpCEpG8XqmjcXc3aQcq%2FM7CKv6x32qCy9Hgq7pzxYM%2FJopQsIbLVuIl7Ixbw1wnkA0%3D\"}]}",
+    "vary": "Accept-Encoding",
+    "Server": "cloudflare",
+    "x-powered-by": "CyberPanel-OLS/2.4.4",
+    "x-turbo-charged-by": "LiteSpeed",
+    "Age": "93863",
+    "cf-cache-status": "HIT",
+    "etag": "W/\"15266-6994e042-e37cb;br\"",
+    "Content-Encoding": "gzip",
+    "CF-RAY": "9d5ee9868a7463a5-DFW",
+    "alt-svc": "h3=\":443\"; ma=86400"
+  }
+}
