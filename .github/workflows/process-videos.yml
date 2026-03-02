@@ -131,6 +131,12 @@ jobs:
           for video in downloads/*; do
             [ -f "$video" ] || continue
             filename=$(basename "$video")
+
+            # Skip non-video files (e.g. .ts config files, .txt, .html)
+            case "${filename,,}" in
+              *.mp4|*.mkv|*.avi|*.mov|*.wmv|*.flv|*.webm|*.m4v|*.mpg|*.mpeg) ;;
+              *) echo "  Skipping non-video file: $filename"; rm -f "$video"; continue ;;
+            esac
             echo "Processing: $filename"
 
             # Auto-calculate crop by detecting black borders
