@@ -7,4 +7,4 @@
 - **Concurrency**: auto workers
 - **Skip media files**: true
 - **Run**: #36
-- **Status**: 🔄 Crawling in progress…
+- **Status**: ✅ Crawl complete
