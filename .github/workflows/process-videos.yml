@@ -139,15 +139,22 @@ jobs:
 
             # Build ffmpeg filter and hwaccel flags per video
             VF_ARGS=""
-            ACCEL_FLAGS="$HWACCEL_FLAGS"
             if [ -n "$crop_info" ]; then
               echo "  Detected crop: $crop_info"
               VF_ARGS="-vf ${crop_info}"
-              ACCEL_FLAGS=""  # crop filter requires CPU frames, disable hwaccel
             fi
 
             # Encode with chosen encoder
+            # Note: hwaccel cuda is only used when no crop filter is needed,
+            # because crop operates on CPU frames. h264_nvenc encoding still
+            # uses the GPU regardless of the decoding path.
             if [ "$ENCODER" = "h264_nvenc" ]; then
+              if [ -z "$VF_ARGS" ]; then
+                ACCEL_FLAGS="$HWACCEL_FLAGS"
+              else
+                ACCEL_FLAGS=""
+              fi
+              # shellcheck disable=SC2086
               ffmpeg -y $ACCEL_FLAGS -i "$video" \
                 $VF_ARGS \
                 -c:v h264_nvenc -preset p4 -cq 18 -b:v 0 \
@@ -155,6 +162,7 @@ jobs:
                 -pix_fmt yuv420p -movflags +faststart \
                 "processed/${filename}" 2>/dev/null || {
                   echo "  WARNING: NVENC failed, retrying with libx264"
+                  # shellcheck disable=SC2086
                   ffmpeg -y -i "$video" \
                     $VF_ARGS \
                     -c:v libx264 -preset fast -crf 18 \
@@ -163,6 +171,7 @@ jobs:
                     "processed/${filename}" 2>/dev/null
                 }
             else
+              # shellcheck disable=SC2086
               ffmpeg -y -i "$video" \
                 $VF_ARGS \
                 -c:v libx264 -preset fast -crf 18 \
