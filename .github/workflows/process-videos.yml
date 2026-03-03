@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   process-videos:
-    runs-on: mp4  # Self-hosted: Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD
+    runs-on: mp4  # Enterprise runner: Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD (no GPU)
     timeout-minutes: 480
     environment: /dev/null
 
@@ -22,133 +22,10 @@ jobs:
           cat > /tmp/dashboard.md <<'EOF'
           ## 🎬 Video Processing Dashboard
 
-          ⬜⬜⬜⬜⬜⬜⬜ **0 / 7** — Starting…
+          ⬜⬜⬜⬜⬜⬜ **0 / 6** — Starting…
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ⏳ Running | Configuring system… |
-          | 📦 Dependencies | ⏳ Pending | — |
-          | 📁 Directories | ⏳ Pending | — |
-          | ⬇️ Downloads | ⏳ Pending | — |
-          | 🎞️ Processing | ⏳ Pending | — |
-          | 📦 Packaging | ⏳ Pending | — |
-          | 🚀 Release | ⏳ Pending | — |
-          EOF
-          cp /tmp/dashboard.md "$GITHUB_STEP_SUMMARY"
-          echo "::endgroup::"
-
-      - name: System optimizations
-        run: |
-          PHASE_START=$SECONDS
-
-          echo "::group::Swap (8 GB)"
-          if [ ! -f /swapfile ]; then
-            sudo fallocate -l 8G /swapfile
-            sudo chmod 600 /swapfile
-            sudo mkswap /swapfile > /dev/null
-          fi
-          if ! swapon --show | grep -q /swapfile; then
-            sudo swapon /swapfile
-          fi
-          echo "Swap: $(free -h | grep Swap)"
-          echo "::endgroup::"
-
-          echo "::group::RAM tuning (256 GB)"
-          sudo sysctl -w vm.swappiness=1              > /dev/null || true
-          sudo sysctl -w vm.dirty_ratio=40             > /dev/null || true
-          sudo sysctl -w vm.dirty_background_ratio=3   > /dev/null || true
-          sudo sysctl -w vm.vfs_cache_pressure=50      > /dev/null || true
-          sudo sysctl -w vm.overcommit_memory=1        > /dev/null || true
-          echo "vm.swappiness=1, dirty_ratio=40, vfs_cache_pressure=50, overcommit=1"
-          echo "::endgroup::"
-
-          echo "::group::Network tuning (64 concurrent downloads)"
-          sudo sysctl -w net.core.rmem_max=134217728             > /dev/null || true
-          sudo sysctl -w net.core.wmem_max=134217728             > /dev/null || true
-          sudo sysctl -w net.ipv4.tcp_rmem='4096 87380 134217728' > /dev/null || true
-          sudo sysctl -w net.ipv4.tcp_wmem='4096 65536 134217728' > /dev/null || true
-          sudo sysctl -w net.core.netdev_max_backlog=5000        > /dev/null || true
-          sudo sysctl -w net.ipv4.tcp_window_scaling=1           > /dev/null || true
-          sudo sysctl -w net.ipv4.tcp_tw_reuse=1                 > /dev/null || true
-          echo "TCP buffers 128 MB, backlog 5000, tw_reuse=1"
-          echo "::endgroup::"
-
-          echo "::group::Disable THP defrag"
-          if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
-            echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null 2>&1 \
-              && echo "THP defrag: madvise" \
-              || echo "THP defrag: write failed (skipped)"
-          else
-            echo "THP defrag: not available (skipped)"
-          fi
-          echo "::endgroup::"
-
-          echo "::group::I/O scheduler (NVMe SSD)"
-          for dev in /sys/block/*/queue/scheduler; do
-            blk=$(echo "$dev" | cut -d/ -f4)
-            case "$blk" in loop*) continue ;; esac
-            if echo none | sudo tee "$dev" > /dev/null 2>&1; then
-              echo "  $blk → none"
-            else
-              echo "  $blk → unchanged"
-            fi
-          done
-          echo "::endgroup::"
-
-          echo "::group::CPU performance governor"
-          if [ -d /sys/devices/system/cpu/cpu0/cpufreq ]; then
-            for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-              echo performance | sudo tee "$gov" > /dev/null 2>&1
-            done
-            echo "CPU governor: performance"
-          else
-            echo "CPU governor: not available (skipped)"
-          fi
-          echo "::endgroup::"
-
-          echo "::group::Kernel scheduler tuning (throughput)"
-          # EEVDF (kernel 6.6+): disable autogroup, max util clamp
-          sudo sysctl -w kernel.sched_autogroup_enabled=0             > /dev/null 2>&1 || true
-          sudo sysctl -w kernel.sched_util_clamp_min=1024             > /dev/null 2>&1 || true
-          # CFS (kernel < 6.6): silently skipped on EEVDF
-          sudo sysctl -w kernel.sched_min_granularity_ns=10000000    > /dev/null 2>&1 || true
-          sudo sysctl -w kernel.sched_wakeup_granularity_ns=15000000 > /dev/null 2>&1 || true
-          sudo sysctl -w kernel.sched_migration_cost_ns=5000000      > /dev/null 2>&1 || true
-          echo "Scheduler: autogroup off, util_clamp_min max, CFS fallbacks"
-          echo "::endgroup::"
-
-          echo "::group::File descriptor limits"
-          ulimit -n 65536 2>/dev/null || true
-          ulimit -u 65536 2>/dev/null || true
-          echo "ulimit -n=$(ulimit -n), ulimit -u=$(ulimit -u)"
-          echo "::endgroup::"
-
-          echo "::group::Block device readahead"
-          for dev in /sys/block/*/queue/read_ahead_kb; do
-            blk=$(echo "$dev" | cut -d/ -f4)
-            case "$blk" in loop*) continue ;; esac
-            echo 2048 | sudo tee "$dev" > /dev/null 2>&1 && echo "  $blk → 2048 KB" || true
-          done
-          echo "::endgroup::"
-
-          echo "::group::System summary"
-          echo "CPUs : $(nproc)"
-          echo "RAM  :"; free -h
-          echo "Disk :"; df -h .
-          echo "::endgroup::"
-
-          ELAPSED=$((SECONDS - PHASE_START))
-          CPU_COUNT=$(nproc)
-          RAM_TOTAL=$(free -h | awk '/Mem:/{print $2}')
-          echo "::group::Update dashboard"
-          cat > /tmp/dashboard.md <<EOF
-          ## 🎬 Video Processing Dashboard
-
-          🟩⬜⬜⬜⬜⬜⬜ **1 / 7** — System configured
-
-          | Phase | Status | Details |
-          |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | ${ELAPSED}s — ${CPU_COUNT} CPUs, ${RAM_TOTAL} RAM |
           | 📦 Dependencies | ⏳ Running | Installing… |
           | 📁 Directories | ⏳ Pending | — |
           | ⬇️ Downloads | ⏳ Pending | — |
@@ -163,10 +40,14 @@ jobs:
         run: |
           PHASE_START=$SECONDS
 
-          echo "::group::apt-get install ffmpeg aria2 zip speedtest-cli"
+          echo "::group::apt-get install ffmpeg aria2 zip"
           sudo apt-get update -qq > /dev/null
-          sudo apt-get install -y -qq ffmpeg aria2 zip speedtest-cli > /dev/null
-          echo "Installed: ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}'), aria2 $(aria2c --version 2>/dev/null | head -1 | awk '{print $3}'), zip, speedtest-cli"
+          sudo apt-get install -y -qq ffmpeg aria2 zip > /dev/null
+          echo "Installed: ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}'), aria2 $(aria2c --version 2>/dev/null | head -1 | awk '{print $3}'), zip"
+          # Enterprise runners (Azure VMs) have no GPU; hwaccel is not available.
+          # Decoding and encoding are both CPU-only (software).
+          echo "Runner CPU: $(lscpu 2>/dev/null | awk -F: '/Model name/{gsub(/^[ \t]+/,"",$2); print $2}')"
+          echo "GPU       : none (Enterprise runner — Azure VM without GPU)"
           echo "::endgroup::"
 
           echo "::group::GitHub CLI"
@@ -188,11 +69,10 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩⬜⬜⬜⬜⬜ **2 / 7** — Dependencies installed
+          🟩⬜⬜⬜⬜⬜ **1 / 6** — Dependencies installed
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | ${ELAPSED}s — ffmpeg, aria2, zip, gh |
           | 📁 Directories | ⏳ Running | — |
           | ⬇️ Downloads | ⏳ Pending | — |
@@ -219,11 +99,10 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩🟩⬜⬜⬜⬜ **3 / 7** — Directories ready
+          🟩🟩⬜⬜⬜⬜ **2 / 6** — Directories ready
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
           | ⬇️ Downloads | ⏳ Running | Preparing… |
@@ -257,66 +136,29 @@ jobs:
           echo "Prepared $count URLs ($skipped empty lines skipped)"
           echo "::endgroup::"
 
-          echo "::group::Bandwidth test (speedtest-cli)"
-          DL_SPEED=$(speedtest-cli --simple 2>/dev/null | awk '/Download:/{print int($2)}')
-          if [ -z "$DL_SPEED" ] || [ "$DL_SPEED" -eq 0 ] 2>/dev/null; then
-            DL_SPEED=1000
-            echo "Speedtest failed, using default: ${DL_SPEED} Mbit/s"
-          else
-            echo "Measured download speed: ${DL_SPEED} Mbit/s"
-          fi
-
-          # Calculate aria2c parameters based on measured bandwidth
-          DL_MBS=$((DL_SPEED / 8))  # Convert Mbit/s to MB/s
-
-          # max-concurrent-downloads: ~1 per 10 MB/s, min 4, max 24
-          CONCURRENT=$((DL_MBS / 10))
-          [ "$CONCURRENT" -lt 4 ] && CONCURRENT=4
-          [ "$CONCURRENT" -gt 24 ] && CONCURRENT=24
-
-          # max-connection-per-server: ~1 per 20 MB/s, min 4, max 8
-          CONNS=$((DL_MBS / 20))
-          [ "$CONNS" -lt 4 ] && CONNS=4
-          [ "$CONNS" -gt 8 ] && CONNS=8
-
-          SPLIT=$CONNS
-
-          # lowest-speed-limit: 1% of expected per-connection throughput, min 20K, max 200K
-          # Per-connection KB/s = total_KB/s / concurrent / conns_per_server
-          PER_CONN_KBS=$((DL_MBS * 1024 / CONCURRENT / CONNS))
-          LOWEST=$((PER_CONN_KBS / 100))
-          [ "$LOWEST" -lt 20 ] && LOWEST=20
-          [ "$LOWEST" -gt 200 ] && LOWEST=200
-
-          echo "Bandwidth: ${DL_SPEED} Mbit/s (${DL_MBS} MB/s)"
-          echo "Calculated: concurrent=${CONCURRENT}, conns/server=${CONNS}, split=${SPLIT}, lowest-speed=${LOWEST}K"
-          echo "::endgroup::"
-
-          echo "::group::Download with aria2c (${CONCURRENT} concurrent, ${CONNS} connections/server)"
+          echo "::group::Download with aria2c (64 concurrent, 16 connections/server)"
           aria2c \
             --input-file=/tmp/aria2_downloads.txt \
             --dir=downloads \
-            --max-concurrent-downloads=${CONCURRENT} \
-            --max-connection-per-server=${CONNS} \
-            --split=${SPLIT} \
+            --max-concurrent-downloads=64 \
+            --max-connection-per-server=16 \
+            --split=16 \
             --min-split-size=1M \
             --disk-cache=1024M \
-            --file-allocation=none \
-            --max-tries=50 \
-            --retry-wait=5 \
-            --max-file-not-found=10 \
-            --connect-timeout=15 \
-            --timeout=300 \
-            --lowest-speed-limit=${LOWEST}K \
-            --enable-http-pipelining=true \
+            --file-allocation=falloc \
+            --max-tries=5 \
+            --retry-wait=3 \
+            --connect-timeout=10 \
+            --timeout=120 \
+            --max-overall-download-limit=0 \
+            --max-download-limit=0 \
             --optimize-concurrent-downloads=true \
+            --stream-piece-selector=geom \
             --uri-selector=adaptive \
             --console-log-level=warn \
             --summary-interval=15 \
             --auto-file-renaming=false \
-            --allow-overwrite=true \
-            --max-resume-failure-tries=10 \
-            --always-resume=true 2>&1 || echo "::warning::Some downloads may have failed"
+            --allow-overwrite=true 2>&1 || echo "::warning::Some downloads may have failed"
           echo "::endgroup::"
 
           echo "::group::Validate downloaded files"
@@ -344,14 +186,13 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩🟩🟩⬜⬜⬜ **4 / 7** — Downloads complete
+          🟩🟩🟩⬜⬜⬜ **3 / 6** — Downloads complete
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
-          | ⬇️ Downloads | ✅ Done | ${ELAPSED}s — ${valid} files (${total_size}), ${invalid} invalid, ${DL_SPEED} Mbit/s |
+          | ⬇️ Downloads | ✅ Done | ${ELAPSED}s — ${valid} files (${total_size}), ${invalid} invalid |
           | 🎞️ Processing | ⏳ Running | 0/${valid} videos… |
           | 📦 Packaging | ⏳ Pending | — |
           | 🚀 Release | ⏳ Pending | — |
@@ -369,8 +210,8 @@ jobs:
           ENHANCE_FILTERS="hqdn3d=3:2:5:3.5,cas=0.4,eq=contrast=1.03:saturation=1.08"
 
           echo "::group::Encoder configuration"
-          echo "Encoder  : libx264 preset slow CRF 15 · profile high · tune film"
-          echo "Decode   : hardware-accelerated (hwaccel auto)"
+          echo "Encoder  : libx264 preset veryslow CRF 15 · profile high · tune film"
+          echo "Decode   : software (Enterprise runner — no GPU)"
           echo "Workers  : ${PARALLEL_JOBS} jobs × ${THREADS_PER_JOB} threads = 64 vCPUs"
           echo "Filters  : crop (auto 10s) → hqdn3d (denoise) → cas (sharpen) → eq (color)"
           echo "I/O      : full tmpfs (downloads + processed in RAM)"
@@ -413,7 +254,7 @@ jobs:
             echo "  ▶ $filename (${src_w}×${src_h})"
 
             # 2. Cropdetect over first 10 s
-            crop_info=$(ffmpeg -nostdin -hwaccel auto -threads 2 -i "$video" -t 10 -an \
+            crop_info=$(ffmpeg -nostdin -threads 2 -i "$video" -t 10 -an \
               -vf cropdetect=24:16:0 -f null /dev/null 2>&1 \
               | grep -oP 'crop=[0-9]+:[0-9]+:[0-9]+:[0-9]+' | sort | uniq -c | sort -rn | head -1 \
               | awk '{print $2}' || echo "")
@@ -442,25 +283,30 @@ jobs:
             echo "    🎬 $filename — encoding…"
 
             # 4. Encode
+            # -threads MUST be after -i to apply to the encoder (libx264).
+            # Before -i it only sets decoder threads; x264 ignores it and
+            # auto-detects (e.g. 22+), causing massive thread oversubscription
+            # when running 16 parallel workers (16×22 = 352 threads on 64 cores).
+            local logfile="/tmp/ffmpeg_${filename}.log"
             # shellcheck disable=SC2086
             ffmpeg -y -nostdin \
-              -hwaccel auto \
-              -threads "${THREADS_PER_JOB}" \
               -i "$video" \
               $VF_ARGS \
-              -c:v libx264 -preset slow -crf 15 \
+              -c:v libx264 -preset veryslow -crf 15 -threads "${THREADS_PER_JOB}" \
               -profile:v high -level:v 4.1 -tune film \
-              -x264-params "aq-mode=3:aq-strength=0.8:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60:bframes=5:ref=5" \
+              -x264-params "aq-mode=3:aq-strength=0.8:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60:bframes=5:ref=4" \
               -c:a aac -b:a 256k -ar 48000 \
               -pix_fmt yuv420p -movflags +faststart \
-              "processed/${filename}" > /dev/null 2>&1 || {
+              "processed/${filename}" > /dev/null 2>"$logfile" || {
                 echo "::warning::Encode failed for $filename — copying original"
+                tail -5 "$logfile" 2>/dev/null || true
                 cp "$video" "processed/${filename}"
                 (
                   flock 9
                   echo $(($(cat /tmp/vid_errors) + 1)) > /tmp/vid_errors
                 ) 9>/tmp/vid_lock
               }
+            rm -f "$logfile"
 
             rm -f "$video"
 
@@ -513,11 +359,10 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩🟩🟩🟩⬜⬜ **5 / 7** — Encoding complete
+          🟩🟩🟩🟩⬜⬜ **4 / 6** — Encoding complete
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
           | ⬇️ Downloads | ✅ Done | — |
@@ -584,11 +429,10 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩🟩🟩🟩🟩⬜ **6 / 7** — Zips created
+          🟩🟩🟩🟩🟩⬜ **5 / 6** — Zips created
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
           | ⬇️ Downloads | ✅ Done | — |
@@ -609,26 +453,20 @@ jobs:
           TAG="videos-${TIMESTAMP}"
           TITLE="Processed Videos - ${TIMESTAMP}"
           zip_count=$(ls zips/*.zip 2>/dev/null | wc -l)
-          BODY="Processed ${zip_count} zip parts — Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD.
+          BODY="Processed ${zip_count} zip parts — Enterprise runner: Ubuntu 24.04 · 64 cores · 256 GB RAM.
 
-          System tuning
-          - Swap: 8 GB swapfile
-          - RAM: vm.swappiness=1, dirty_ratio=40, overcommit=1 (256 GB)
+          Downloads
+          - aria2c: 64 concurrent, 16 connections/server, split=16, falloc
           - downloads/ + processed/ on tmpfs RAM-disk (100 GB each)
-          - NVMe I/O scheduler: none
-          - CPU governor: performance
-          - Kernel scheduler: throughput-optimized
-          - Network: 128 MB TCP buffers, 64 concurrent download streams
-          - aria2c: disk-cache=1024M, file-allocation=falloc
 
           Video processing (16 workers × 4 threads = 64 vCPUs)
-          - Hardware-accelerated decoding (hwaccel auto)
+          - Software decoding (Enterprise runner — no GPU)
           - Black borders removed (cropdetect, 10 s sample)
           - Noise reduction: hqdn3d (light spatial + moderate temporal)
           - Sharpening: CAS (Contrast Adaptive Sharpen)
           - Color: subtle contrast & saturation boost (eq filter)
-          - Encoder: libx264 preset slow CRF 15 · profile high · tune film
-          - x264: aq-mode=3, psy-rd=1.0, deblock=-1
+          - Encoder: libx264 preset veryslow CRF 15 · profile high · tune film
+          - x264: aq-mode=3, psy-rd=1.0, deblock=-1, ref=4
           - Audio: AAC 256 kbps 48 kHz
           - ZIP parts: max ~1.9 GB each"
 
@@ -644,11 +482,10 @@ jobs:
           cat > /tmp/dashboard.md <<EOF
           ## 🎬 Video Processing Dashboard
 
-          🟩🟩🟩🟩🟩🟩🟩 **7 / 7** — Complete ✅
+          🟩🟩🟩🟩🟩🟩 **6 / 6** — Complete ✅
 
           | Phase | Status | Details |
           |-------|--------|---------|
-          | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
           | ⬇️ Downloads | ✅ Done | — |
