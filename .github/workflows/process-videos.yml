@@ -15,6 +15,58 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: System and RAM optimizations
+        run: |
+          echo "=== CPU: set performance governor ==="
+          for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+            echo performance | sudo tee "$gov" > /dev/null 2>&1 || true
+          done
+          cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null \
+            || echo "(cpufreq not available on this runner)"
+
+          echo "=== Kernel VM / memory tuning ==="
+          # Prefer RAM; only swap under real memory pressure
+          sudo sysctl -w vm.swappiness=10
+          # Allow a large dirty-page buffer before flushing — better write throughput
+          sudo sysctl -w vm.dirty_ratio=60
+          sudo sysctl -w vm.dirty_background_ratio=5
+          # Keep inode/dentry metadata in cache longer (faster repeated file lookups)
+          sudo sysctl -w vm.vfs_cache_pressure=50
+          # Allow memory over-commit — required for many parallel ffmpeg allocations
+          sudo sysctl -w vm.overcommit_memory=1
+          # Reduce task migration between cores (keep each ffmpeg job on the same CPUs)
+          sudo sysctl -w kernel.sched_migration_cost_ns=5000000
+
+          echo "=== Network tuning (64 concurrent downloads) ==="
+          sudo sysctl -w net.core.rmem_max=134217728
+          sudo sysctl -w net.core.wmem_max=134217728
+          sudo sysctl -w net.ipv4.tcp_rmem='4096 87380 134217728'
+          sudo sysctl -w net.ipv4.tcp_wmem='4096 65536 134217728'
+          sudo sysctl -w net.core.netdev_max_backlog=5000
+          sudo sysctl -w net.ipv4.tcp_window_scaling=1
+          sudo sysctl -w net.ipv4.tcp_tw_reuse=1
+
+          echo "=== File descriptor limits ==="
+          # Raise the per-process limit so 16 parallel ffmpeg jobs never hit EMFILE
+          sudo bash -c 'echo "* soft nofile 1048576" >> /etc/security/limits.conf'
+          sudo bash -c 'echo "* hard nofile 1048576" >> /etc/security/limits.conf'
+          ulimit -n 1048576 2>/dev/null || true
+
+          echo "=== Disable THP defrag (reduces latency spikes during encoding) ==="
+          echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag \
+            > /dev/null 2>&1 || true
+
+          echo "=== I/O scheduler: prefer mq-deadline for all block devices ==="
+          for sched in /sys/block/*/queue/scheduler; do
+            echo mq-deadline | sudo tee "$sched" > /dev/null 2>&1 || \
+            echo none        | sudo tee "$sched" > /dev/null 2>&1 || true
+          done
+
+          echo "=== System summary ==="
+          echo "CPUs: $(nproc)"
+          free -h
+          df -h .
+
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
@@ -32,6 +84,17 @@ jobs:
       - name: Create working directories
         run: |
           mkdir -p downloads processed zips
+
+          # Mount processed/ on a RAM-disk (tmpfs) when enough free RAM is available.
+          # Encode outputs land here before being zipped; with 16 parallel jobs the
+          # working set is at most ~16 files at once, so 20 GB is a safe ceiling.
+          FREE_RAM_GB=$(free -g | awk '/^Mem:/ {print $7}')
+          if [ "${FREE_RAM_GB:-0}" -ge 32 ]; then
+            echo "Mounting processed/ on tmpfs (${FREE_RAM_GB} GB free RAM) — RAM-disk I/O"
+            sudo mount -t tmpfs -o size=20G tmpfs processed/
+          else
+            echo "Using disk for processed/ (only ${FREE_RAM_GB} GB free RAM available)"
+          fi
 
       - name: Download videos
         run: |
@@ -62,6 +125,7 @@ jobs:
             --max-connection-per-server=16 \
             --split=16 \
             --min-split-size=1M \
+            --disk-cache=256M \
             --file-allocation=none \
             --max-tries=5 \
             --retry-wait=3 \
@@ -147,8 +211,9 @@ jobs:
             VF_ARGS="-vf ${CROP_PREFIX}${ENHANCE_FILTERS}"
 
             # Encode with libx264: high quality (CRF 17), slow preset for best compression
+            # -thread_queue_size 512 enlarges the input packet read-ahead buffer
             # shellcheck disable=SC2086
-            ffmpeg -y -threads "${THREADS_PER_JOB}" -i "$video" \
+            ffmpeg -y -threads "${THREADS_PER_JOB}" -thread_queue_size 512 -i "$video" \
               $VF_ARGS \
               -c:v libx264 -preset slow -crf 17 \
               -c:a aac -b:a 192k \
@@ -230,6 +295,9 @@ jobs:
           TITLE="Processed Videos - ${TIMESTAMP}"
           BODY="Processed $(ls processed/ 2>/dev/null | wc -l || echo '396') videos using CPU-optimized ffmpeg (64 vCPUs).
 
+          - System tuned: CPU governor=performance, vm.swappiness=10, dirty pages, THP, I/O scheduler
+          - processed/ mounted on tmpfs (RAM-disk) when ≥32 GB free RAM available
+          - Downloads RAM-buffered via aria2c --disk-cache=256M
           - Black borders auto-detected and cropped (cropdetect over 30s sample)
           - Noise reduction applied (hqdn3d: spatial + temporal)
           - Sharpening applied (unsharp luma filter)
