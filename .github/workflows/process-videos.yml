@@ -10,7 +10,6 @@ jobs:
   process-videos:
     runs-on: mp4  # Enterprise runner: Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD (no GPU)
     timeout-minutes: 480
-    environment: /dev/null
 
     steps:
       - name: Checkout repository
@@ -210,7 +209,7 @@ jobs:
           ENHANCE_FILTERS="hqdn3d=3:2:5:3.5,cas=0.4,eq=contrast=1.03:saturation=1.08"
 
           echo "::group::Encoder configuration"
-          echo "Encoder  : libx264 preset veryslow CRF 15 · profile high · tune film"
+          echo "Encoder  : libx264 preset fast CRF 15 · profile high · tune film"
           echo "Decode   : software (Enterprise runner — no GPU)"
           echo "Workers  : ${PARALLEL_JOBS} jobs × ${THREADS_PER_JOB} threads = 64 vCPUs"
           echo "Filters  : crop (auto 10s) → hqdn3d (denoise) → cas (sharpen) → eq (color)"
@@ -292,9 +291,9 @@ jobs:
             ffmpeg -y -nostdin \
               -i "$video" \
               $VF_ARGS \
-              -c:v libx264 -preset veryslow -crf 15 -threads "${THREADS_PER_JOB}" \
+              -c:v libx264 -preset fast -crf 15 -threads "${THREADS_PER_JOB}" \
               -profile:v high -level:v 4.1 -tune film \
-              -x264-params "aq-mode=3:aq-strength=0.8:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=60:bframes=5:ref=4" \
+              -x264-params "aq-mode=3:aq-strength=0.8:psy-rd=1.0,0.15:deblock=-1,-1:rc-lookahead=30:bframes=3:ref=4" \
               -c:a aac -b:a 256k -ar 48000 \
               -pix_fmt yuv420p -movflags +faststart \
               "processed/${filename}" > /dev/null 2>"$logfile" || {
@@ -465,7 +464,7 @@ jobs:
           - Noise reduction: hqdn3d (light spatial + moderate temporal)
           - Sharpening: CAS (Contrast Adaptive Sharpen)
           - Color: subtle contrast & saturation boost (eq filter)
-          - Encoder: libx264 preset veryslow CRF 15 · profile high · tune film
+          - Encoder: libx264 preset fast CRF 15 · profile high · tune film
           - x264: aq-mode=3, psy-rd=1.0, deblock=-1, ref=4
           - Audio: AAC 256 kbps 48 kHz
           - ZIP parts: max ~1.9 GB each"
