@@ -24,7 +24,20 @@ jobs:
           cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null \
             || echo "(cpufreq not available on this runner)"
           # Keep ffmpeg worker threads on the same cores — reduces cache-miss migrations
-          sudo sysctl -w kernel.sched_migration_cost_ns=5000000 || true
+          # (kernel.sched_migration_cost_ns may not exist on all Ubuntu 24.04 kernels)
+          sudo sysctl -w kernel.sched_migration_cost_ns=5000000 2>/dev/null || true
+
+          echo "=== Swap setup ==="
+          if [ "$(swapon --show --noheadings | wc -l)" -eq 0 ]; then
+            sudo fallocate -l 8G /swapfile \
+              || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            echo "Swap created: $(swapon --show)"
+          else
+            echo "Swap already configured"
+          fi
 
           echo "=== RAM tuning (256 GB) ==="
           # With 256 GB, swap should almost never be needed
@@ -119,7 +132,7 @@ jobs:
             --max-connection-per-server=16 \
             --split=16 \
             --min-split-size=1M \
-            --disk-cache=1G \
+            --disk-cache=1024M \
             --file-allocation=falloc \
             --max-tries=5 \
             --retry-wait=3 \
@@ -297,7 +310,7 @@ jobs:
           - processed/ on tmpfs RAM-disk (40 GB)
           - NVMe I/O scheduler: none
           - Network: 128 MB TCP buffers, 64 concurrent download streams
-          - aria2c: disk-cache=1G, file-allocation=falloc
+          - aria2c: disk-cache=1024M, file-allocation=falloc
 
           Video processing (16 workers × 4 threads = 64 vCPUs)
           - Black borders removed (cropdetect, 30 s sample)
