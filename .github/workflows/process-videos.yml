@@ -414,6 +414,24 @@ jobs:
           done
           echo "::endgroup::"
 
+          echo "::group::Validating zip sizes (max 1.9 GB each)"
+          oversize_found=0
+          for z in zips/*.zip; do
+            [ -f "$z" ] || continue
+            z_bytes=$(stat -c%s "$z")
+            if [ "$z_bytes" -gt "$MAX_SIZE" ]; then
+              echo "  ❌ $(basename "$z") is ${z_bytes} bytes — exceeds MAX_SIZE ${MAX_SIZE} bytes"
+              oversize_found=1
+            else
+              echo "  ✅ $(basename "$z") is ${z_bytes} bytes — OK"
+            fi
+          done
+          if [ "$oversize_found" -eq 1 ]; then
+            echo "ERROR: One or more zip files exceed the 1.9 GB limit." >&2
+            exit 1
+          fi
+          echo "::endgroup::"
+
           zip_count=$(ls zips/*.zip 2>/dev/null | wc -l)
           zip_size=$(du -sh zips/ 2>/dev/null | awk '{print $1}')
           zip_size=${zip_size:-0}
