@@ -257,11 +257,11 @@ jobs:
           echo "Prepared $count URLs ($skipped empty lines skipped)"
           echo "::endgroup::"
 
-          echo "::group::Download with aria2c (256 concurrent, 16 connections/server)"
+          echo "::group::Download with aria2c (32 concurrent, 16 connections/server)"
           aria2c \
             --input-file=/tmp/aria2_downloads.txt \
             --dir=downloads \
-            --max-concurrent-downloads=256 \
+            --max-concurrent-downloads=32 \
             --max-connection-per-server=16 \
             --split=16 \
             --min-split-size=512K \
