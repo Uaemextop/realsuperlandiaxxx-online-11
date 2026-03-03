@@ -8,34 +8,34 @@ permissions:
 
 jobs:
   process-videos:
-    runs-on: mp4  # GitHub Enterprise self-hosted runner with 64 vCPUs
+    runs-on: mp4  # Self-hosted: Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD
     timeout-minutes: 480
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: System and RAM optimizations
+      - name: System optimizations
         run: |
-          echo "=== CPU: set performance governor ==="
+          echo "=== CPU: set performance governor (64 cores) ==="
           for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
             echo performance | sudo tee "$gov" > /dev/null 2>&1 || true
           done
           cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null \
             || echo "(cpufreq not available on this runner)"
-
-          echo "=== Kernel VM / memory tuning ==="
-          # Prefer RAM; only swap under real memory pressure
-          sudo sysctl -w vm.swappiness=10
-          # Allow a large dirty-page buffer before flushing — better write throughput
-          sudo sysctl -w vm.dirty_ratio=60
-          sudo sysctl -w vm.dirty_background_ratio=5
-          # Keep inode/dentry metadata in cache longer (faster repeated file lookups)
-          sudo sysctl -w vm.vfs_cache_pressure=50
-          # Allow memory over-commit — required for many parallel ffmpeg allocations
-          sudo sysctl -w vm.overcommit_memory=1
-          # Reduce task migration between cores (keep each ffmpeg job on the same CPUs)
+          # Keep ffmpeg worker threads on the same cores — reduces cache-miss migrations
           sudo sysctl -w kernel.sched_migration_cost_ns=5000000
+
+          echo "=== RAM tuning (256 GB) ==="
+          # With 256 GB, swap should almost never be needed
+          sudo sysctl -w vm.swappiness=1
+          # Buffer up to 40% of RAM as dirty pages before flush — huge write throughput
+          sudo sysctl -w vm.dirty_ratio=40
+          sudo sysctl -w vm.dirty_background_ratio=3
+          # Retain inode/dentry cache aggressively (fast repeated file-metadata lookups)
+          sudo sysctl -w vm.vfs_cache_pressure=50
+          # Allow memory over-commit (needed for 16 parallel ffmpeg allocations)
+          sudo sysctl -w vm.overcommit_memory=1
 
           echo "=== Network tuning (64 concurrent downloads) ==="
           sudo sysctl -w net.core.rmem_max=134217728
@@ -56,16 +56,16 @@ jobs:
           echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag \
             > /dev/null 2>&1 || true
 
-          echo "=== I/O scheduler: prefer mq-deadline for all block devices ==="
+          echo "=== I/O scheduler: none (NVMe SSD optimal), mq-deadline as fallback ==="
           for sched in /sys/block/*/queue/scheduler; do
-            echo mq-deadline | sudo tee "$sched" > /dev/null 2>&1 || \
-            echo none        | sudo tee "$sched" > /dev/null 2>&1 || true
+            echo none        | sudo tee "$sched" > /dev/null 2>&1 || \
+            echo mq-deadline | sudo tee "$sched" > /dev/null 2>&1 || true
           done
 
           echo "=== System summary ==="
-          echo "CPUs: $(nproc)"
-          free -h
-          df -h .
+          echo "CPUs : $(nproc)"
+          echo "RAM  :"; free -h
+          echo "Disk :"; df -h .
 
       - name: Install dependencies
         run: |
@@ -84,17 +84,11 @@ jobs:
       - name: Create working directories
         run: |
           mkdir -p downloads processed zips
-
-          # Mount processed/ on a RAM-disk (tmpfs) when enough free RAM is available.
-          # Encode outputs land here before being zipped; with 16 parallel jobs the
-          # working set is at most ~16 files at once, so 20 GB is a safe ceiling.
-          FREE_RAM_GB=$(free -g | awk '/^Mem:/ {print $7}')
-          if [ "${FREE_RAM_GB:-0}" -ge 32 ]; then
-            echo "Mounting processed/ on tmpfs (${FREE_RAM_GB} GB free RAM) — RAM-disk I/O"
-            sudo mount -t tmpfs -o size=20G tmpfs processed/
-          else
-            echo "Using disk for processed/ (only ${FREE_RAM_GB} GB free RAM available)"
-          fi
+          # 256 GB RAM: mount processed/ as a RAM-disk.
+          # Peak usage = 16 parallel outputs × ~2 GB each ≈ 32 GB; 40 G gives headroom.
+          # Encode output writes at RAM speed, eliminating SSD write latency.
+          echo "Mounting processed/ on tmpfs (40G)..."
+          sudo mount -t tmpfs -o size=40G tmpfs processed/
 
       - name: Download videos
         run: |
@@ -125,8 +119,8 @@ jobs:
             --max-connection-per-server=16 \
             --split=16 \
             --min-split-size=1M \
-            --disk-cache=256M \
-            --file-allocation=none \
+            --disk-cache=1G \
+            --file-allocation=falloc \
             --max-tries=5 \
             --retry-wait=3 \
             --connect-timeout=10 \
@@ -143,90 +137,93 @@ jobs:
 
           echo "Downloaded $(ls downloads/ | wc -l) videos"
 
-      - name: Process videos - crop, denoise, sharpen and re-encode with CPU (64 vCPUs)
+      - name: Process videos - crop, denoise, sharpen and re-encode (64 vCPUs)
         run: |
-          # Use 64 vCPUs: run 16 parallel ffmpeg jobs, each with 4 threads
-          # (x264 gains little above 4 threads per encode; more parallelism = better
-          #  throughput for 396 videos)
+          # 16 parallel jobs × 4 threads each = 64 vCPUs fully utilised
           PARALLEL_JOBS=16
           THREADS_PER_JOB=4
 
-          # Enhancement filter chain applied to every video:
-          #   hqdn3d=4:3:6:4.5  — temporal + spatial noise reduction
-          #   unsharp=5:5:1.0:5:5:0.0 — luma sharpening
+          # Filter chain applied to every video (order matters):
+          #   hqdn3d=4:3:6:4.5        — spatial + temporal noise reduction
+          #   unsharp=5:5:1.0:5:5:0.0  — luma sharpening
           ENHANCE_FILTERS="hqdn3d=4:3:6:4.5,unsharp=5:5:1.0:5:5:0.0"
 
-          echo "Using CPU encoder: libx264 (${PARALLEL_JOBS} parallel jobs × ${THREADS_PER_JOB} threads = 64 vCPUs)"
-          echo "Filters: crop (auto) + noise reduction (hqdn3d) + sharpening (unsharp)"
+          echo "Encoder  : libx264 preset slow CRF 17"
+          echo "Workers  : ${PARALLEL_JOBS} jobs × ${THREADS_PER_JOB} threads = 64 vCPUs"
+          echo "Filters  : crop (auto) → hqdn3d (denoise) → unsharp (sharpen)"
 
           process_video() {
             local video="$1"
             local filename
             filename=$(basename "$video")
 
-            # Skip non-video files (e.g. .ts config files, .txt, .html)
+            # Skip non-video files (.ts, .txt, .html, etc.)
             case "${filename,,}" in
               *.mp4|*.mkv|*.avi|*.mov|*.wmv|*.flv|*.webm|*.m4v|*.mpg|*.mpeg) ;;
               *) echo "  Skipping non-video file: $filename"; rm -f "$video"; return ;;
             esac
             echo "Processing: $filename"
 
-            # Auto-calculate crop by detecting black borders
-            # 1. Get source video dimensions with ffprobe
+            # 1. Get source dimensions
             src_w=$(ffprobe -v error -select_streams v:0 \
-              -show_entries stream=width -of csv=p=0 "$video" 2>/dev/null)
+              -show_entries stream=width  -of csv=p=0 "$video" 2>/dev/null)
             src_h=$(ffprobe -v error -select_streams v:0 \
               -show_entries stream=height -of csv=p=0 "$video" 2>/dev/null)
             echo "  Source dimensions: ${src_w}x${src_h}"
 
-            # 2. Run cropdetect over first 30 seconds and pick the most frequent crop
-            crop_info=$(ffmpeg -threads 2 -i "$video" -t 30 -vf cropdetect=24:16:0 -f null - 2>&1 \
+            # 2. Cropdetect over first 30 s — most frequent crop wins
+            crop_info=$(ffmpeg -threads 2 -i "$video" -t 30 \
+              -vf cropdetect=24:16:0 -f null - 2>&1 \
               | grep -oP 'crop=\S+' | sort | uniq -c | sort -rn | head -1 \
               | awk '{print $2}' || echo "")
 
-            # 3. Build filter chain: (crop +) denoise + sharpen
+            # 3. Validate crop and build filter chain: [crop,] hqdn3d, unsharp
             CROP_PREFIX=""
             if [ -n "$crop_info" ]; then
               crop_w=$(echo "$crop_info" | cut -d= -f2 | cut -d: -f1)
               crop_h=$(echo "$crop_info" | cut -d= -f2 | cut -d: -f2)
               crop_x=$(echo "$crop_info" | cut -d= -f2 | cut -d: -f3)
               crop_y=$(echo "$crop_info" | cut -d= -f2 | cut -d: -f4)
-              # Only apply crop if values are valid positive integers within frame bounds
-              if echo "$crop_w $crop_h $crop_x $crop_y" | grep -qP '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$' && \
+              # Accept only non-negative integers that fit inside the source frame
+              if echo "$crop_w $crop_h $crop_x $crop_y" \
+                   | grep -qP '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$' && \
                  [ "$crop_w" -gt 0 ] && [ "$crop_h" -gt 0 ] && \
                  { [ -z "$src_w" ] || [ "$((crop_x + crop_w))" -le "$src_w" ]; } && \
                  { [ -z "$src_h" ] || [ "$((crop_y + crop_h))" -le "$src_h" ]; }; then
                 if [ "$crop_w" != "$src_w" ] || [ "$crop_h" != "$src_h" ] || \
-                   [ "$crop_x" != "0" ] || [ "$crop_y" != "0" ]; then
+                   [ "$crop_x" != "0" ]       || [ "$crop_y" != "0" ]; then
                   echo "  Applying crop: ${crop_w}x${crop_h}+${crop_x}+${crop_y}"
                   CROP_PREFIX="${crop_info},"
                 else
                   echo "  No black borders detected, skipping crop"
                 fi
               else
-                echo "  WARNING: Invalid crop values (${crop_info}), skipping crop"
+                echo "  WARNING: Invalid/out-of-bounds crop (${crop_info}), skipping crop"
               fi
             fi
 
             VF_ARGS="-vf ${CROP_PREFIX}${ENHANCE_FILTERS}"
 
-            # Encode with libx264: high quality (CRF 17), slow preset for best compression
-            # -thread_queue_size 512 enlarges the input packet read-ahead buffer
+            # 4. Encode with libx264 — high quality, all assigned threads
+            local enc_log
+            enc_log=$(mktemp)
             # shellcheck disable=SC2086
-            ffmpeg -y -threads "${THREADS_PER_JOB}" -thread_queue_size 512 -i "$video" \
+            ffmpeg -y \
+              -threads "${THREADS_PER_JOB}" \
+              -thread_queue_size 512 \
+              -i "$video" \
               $VF_ARGS \
               -c:v libx264 -preset slow -crf 17 \
               -c:a aac -b:a 192k \
               -pix_fmt yuv420p -movflags +faststart \
-              "processed/${filename}" 2>/dev/null
+              "processed/${filename}" 2>"$enc_log" || {
+                echo "  ERROR: ffmpeg failed for $filename:"
+                cat "$enc_log"
+                # Last resort — copy original unchanged
+                cp "$video" "processed/${filename}"
+              }
+            rm -f "$enc_log"
 
-            # Fallback: if encoding failed, copy original
-            if [ ! -f "processed/${filename}" ]; then
-              echo "  ERROR: Encoding failed for $filename, copying original"
-              cp "$video" "processed/${filename}"
-            fi
-
-            # Remove original to save disk space
             rm -f "$video"
             echo "  Done: $filename. Disk: $(df -h . | tail -1 | awk '{print $4}') free"
           }
@@ -234,8 +231,7 @@ jobs:
           export -f process_video
           export THREADS_PER_JOB ENHANCE_FILTERS
 
-          # Process all videos in parallel (up to PARALLEL_JOBS at once)
-          # Use -print0 / -0 to safely handle filenames with spaces or special characters
+          # Process all videos in parallel — -print0/-0 handles spaces in filenames
           find downloads -maxdepth 1 -type f -print0 | \
             xargs -0 -P "${PARALLEL_JOBS}" -I{} bash -c 'process_video "$@"' _ {}
 
@@ -293,19 +289,23 @@ jobs:
           TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
           TAG="videos-${TIMESTAMP}"
           TITLE="Processed Videos - ${TIMESTAMP}"
-          BODY="Processed $(ls processed/ 2>/dev/null | wc -l || echo '396') videos using CPU-optimized ffmpeg (64 vCPUs).
+          BODY="Processed $(ls zips/*.zip 2>/dev/null | wc -l || echo 'unknown') zip parts — Ubuntu 24.04 · 64 cores · 256 GB RAM · 2040 GB SSD.
 
-          - System tuned: CPU governor=performance, vm.swappiness=10, dirty pages, THP, I/O scheduler
-          - processed/ mounted on tmpfs (RAM-disk) when ≥32 GB free RAM available
-          - Downloads RAM-buffered via aria2c --disk-cache=256M
-          - Black borders auto-detected and cropped (cropdetect over 30s sample)
-          - Noise reduction applied (hqdn3d: spatial + temporal)
-          - Sharpening applied (unsharp luma filter)
-          - Re-encoded with libx264 (preset slow, CRF 17) for high quality
-          - 16 videos processed in parallel, each using 4 threads (64 vCPUs total)
-          - Videos split into zip parts (max ~1.9GB each)
+          System tuning
+          - CPU governor: performance (64 cores)
+          - RAM: vm.swappiness=1, dirty_ratio=40, overcommit=1 (256 GB)
+          - processed/ on tmpfs RAM-disk (40 GB)
+          - NVMe I/O scheduler: none
+          - Network: 128 MB TCP buffers, 64 concurrent download streams
+          - aria2c: disk-cache=1G, file-allocation=falloc
 
-          Total zip files: $(ls zips/*.zip 2>/dev/null | wc -l)"
+          Video processing (16 workers × 4 threads = 64 vCPUs)
+          - Black borders removed (cropdetect, 30 s sample)
+          - Noise reduction: hqdn3d (spatial + temporal)
+          - Sharpening: unsharp luma filter
+          - Encoder: libx264 preset slow CRF 17
+          - Audio: AAC 192 kbps
+          - ZIP parts: max ~1.9 GB each"
 
           # Create the release
           gh release create "$TAG" \
