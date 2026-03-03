@@ -48,12 +48,6 @@ jobs:
           sudo sysctl -w net.ipv4.tcp_window_scaling=1
           sudo sysctl -w net.ipv4.tcp_tw_reuse=1
 
-          echo "=== File descriptor limits ==="
-          # Raise the per-process limit so 16 parallel ffmpeg jobs never hit EMFILE
-          sudo bash -c 'echo "* soft nofile 1048576" >> /etc/security/limits.conf'
-          sudo bash -c 'echo "* hard nofile 1048576" >> /etc/security/limits.conf'
-          ulimit -n 1048576
-
           echo "=== Disable THP defrag (reduces latency spikes during encoding) ==="
           echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null
 
