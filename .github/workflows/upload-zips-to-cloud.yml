@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   upload-to-cloud:
-    runs-on: ubuntu-latest
+    runs-on: mp4
     timeout-minutes: 360
 
     steps:
