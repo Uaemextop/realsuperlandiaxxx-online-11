@@ -24,7 +24,20 @@ jobs:
           cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null \
             || echo "(cpufreq not available on this runner)"
           # Keep ffmpeg worker threads on the same cores — reduces cache-miss migrations
-          sudo sysctl -w kernel.sched_migration_cost_ns=5000000 || true
+          # (kernel.sched_migration_cost_ns may not exist on all Ubuntu 24.04 kernels)
+          sudo sysctl -w kernel.sched_migration_cost_ns=5000000 2>/dev/null || true
+
+          echo "=== Swap setup ==="
+          if [ "$(swapon --show --noheadings | wc -l)" -eq 0 ]; then
+            sudo fallocate -l 8G /swapfile \
+              || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+            echo "Swap created: $(swapon --show)"
+          else
+            echo "Swap already configured"
+          fi
 
           echo "=== RAM tuning (256 GB) ==="
           # With 256 GB, swap should almost never be needed
