@@ -52,7 +52,7 @@ jobs:
           # Raise the per-process limit so 16 parallel ffmpeg jobs never hit EMFILE
           sudo bash -c 'echo "* soft nofile 1048576" >> /etc/security/limits.conf'
           sudo bash -c 'echo "* hard nofile 1048576" >> /etc/security/limits.conf'
-          ulimit -n 1048576
+          ulimit -n 1048576 || echo "WARNING: Could not raise open-files limit (current: $(ulimit -n)); continuing"
 
           echo "=== Disable THP defrag (reduces latency spikes during encoding) ==="
           echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag > /dev/null
