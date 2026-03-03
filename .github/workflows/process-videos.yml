@@ -216,6 +216,8 @@ jobs:
             local enc_log
             enc_log=$(mktemp)
             # shellcheck disable=SC2086
+            # x264-params: key=value pairs separated by ":", commas within values
+            # (e.g. psy-rd=<rd>,<aq> and deblock=<alpha>,<beta>)
             ffmpeg -y \
               -threads "${THREADS_PER_JOB}" \
               -i "$video" \
