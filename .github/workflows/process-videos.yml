@@ -163,10 +163,10 @@ jobs:
         run: |
           PHASE_START=$SECONDS
 
-          echo "::group::apt-get install ffmpeg aria2 zip"
+          echo "::group::apt-get install ffmpeg aria2 zip speedtest-cli"
           sudo apt-get update -qq > /dev/null
-          sudo apt-get install -y -qq ffmpeg aria2 zip > /dev/null
-          echo "Installed: ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}'), aria2 $(aria2c --version 2>/dev/null | head -1 | awk '{print $3}'), zip"
+          sudo apt-get install -y -qq ffmpeg aria2 zip speedtest-cli > /dev/null
+          echo "Installed: ffmpeg $(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}'), aria2 $(aria2c --version 2>/dev/null | head -1 | awk '{print $3}'), zip, speedtest-cli"
           echo "::endgroup::"
 
           echo "::group::GitHub CLI"
@@ -257,13 +257,48 @@ jobs:
           echo "Prepared $count URLs ($skipped empty lines skipped)"
           echo "::endgroup::"
 
-          echo "::group::Download with aria2c (32 concurrent, 16 connections/server)"
+          echo "::group::Bandwidth test (speedtest-cli)"
+          DL_SPEED=$(speedtest-cli --simple 2>/dev/null | awk '/Download:/{print int($2)}')
+          if [ -z "$DL_SPEED" ] || [ "$DL_SPEED" -eq 0 ] 2>/dev/null; then
+            DL_SPEED=1000
+            echo "Speedtest failed, using default: ${DL_SPEED} Mbit/s"
+          else
+            echo "Measured download speed: ${DL_SPEED} Mbit/s"
+          fi
+
+          # Calculate aria2c parameters based on measured bandwidth
+          DL_MBS=$((DL_SPEED / 8))  # Convert Mbit/s to MB/s
+
+          # max-concurrent-downloads: ~1 per 10 MB/s, min 4, max 32
+          CONCURRENT=$((DL_MBS / 10))
+          [ "$CONCURRENT" -lt 4 ] && CONCURRENT=4
+          [ "$CONCURRENT" -gt 32 ] && CONCURRENT=32
+
+          # max-connection-per-server: ~1 per 20 MB/s, min 4, max 16
+          CONNS=$((DL_MBS / 20))
+          [ "$CONNS" -lt 4 ] && CONNS=4
+          [ "$CONNS" -gt 16 ] && CONNS=16
+
+          SPLIT=$CONNS
+
+          # lowest-speed-limit: 1% of expected per-connection throughput, min 50K, max 500K
+          # Per-connection KB/s = total_KB/s / concurrent / conns_per_server
+          PER_CONN_KBS=$((DL_MBS * 1024 / CONCURRENT / CONNS))
+          LOWEST=$((PER_CONN_KBS / 100))
+          [ "$LOWEST" -lt 50 ] && LOWEST=50
+          [ "$LOWEST" -gt 500 ] && LOWEST=500
+
+          echo "Bandwidth: ${DL_SPEED} Mbit/s (${DL_MBS} MB/s)"
+          echo "Calculated: concurrent=${CONCURRENT}, conns/server=${CONNS}, split=${SPLIT}, lowest-speed=${LOWEST}K"
+          echo "::endgroup::"
+
+          echo "::group::Download with aria2c (${CONCURRENT} concurrent, ${CONNS} connections/server)"
           aria2c \
             --input-file=/tmp/aria2_downloads.txt \
             --dir=downloads \
-            --max-concurrent-downloads=32 \
-            --max-connection-per-server=16 \
-            --split=16 \
+            --max-concurrent-downloads=${CONCURRENT} \
+            --max-connection-per-server=${CONNS} \
+            --split=${SPLIT} \
             --min-split-size=1M \
             --disk-cache=1024M \
             --file-allocation=falloc \
@@ -272,7 +307,7 @@ jobs:
             --max-file-not-found=5 \
             --connect-timeout=15 \
             --timeout=300 \
-            --lowest-speed-limit=100K \
+            --lowest-speed-limit=${LOWEST}K \
             --enable-http-pipelining=true \
             --optimize-concurrent-downloads=true \
             --uri-selector=adaptive \
@@ -316,7 +351,7 @@ jobs:
           | 🔧 System Setup | ✅ Done | — |
           | 📦 Dependencies | ✅ Done | — |
           | 📁 Directories | ✅ Done | full tmpfs (downloads + processed 100G) |
-          | ⬇️ Downloads | ✅ Done | ${ELAPSED}s — ${valid} files (${total_size}), ${invalid} invalid |
+          | ⬇️ Downloads | ✅ Done | ${ELAPSED}s — ${valid} files (${total_size}), ${invalid} invalid, ${DL_SPEED} Mbit/s |
           | 🎞️ Processing | ⏳ Running | 0/${valid} videos… |
           | 📦 Packaging | ⏳ Pending | — |
           | 🚀 Release | ⏳ Pending | — |
